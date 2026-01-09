@@ -225,7 +225,7 @@ class FocusApp:
         
         if not selected_files:
             self.console.print("[red]No valid sounds selected. Exiting.[/red]")
-            return None, None
+            return None, None, []
 
         # Duration
         self.console.print("[bold yellow]Session Duration (minutes):[/bold yellow] ", end="")
@@ -245,8 +245,19 @@ class FocusApp:
                 self.audio.set_master_volume(vol_percent / 100.0)
         except ValueError:
             self.console.print("[red]Invalid volume. Defaulting to 100%.[/red]")
+
+        # Task Intents
+        tasks = []
+        self.console.print()
+        self.console.print("[bold magenta]Optional: Enter up to 3 tasks for this session (press Enter to skip)[/bold magenta]")
+        for i in range(3):
+            self.console.print(f"[bold yellow]Task #{i+1}:[/bold yellow] ", end="")
+            t = input().strip()
+            if not t:
+                break
+            tasks.append(t)
             
-        return selected_files, seconds
+        return selected_files, seconds, tasks
 
     def check_input(self):
         if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
@@ -254,7 +265,7 @@ class FocusApp:
         return None
 
     def run(self):
-        files, duration = self.phase_one_selection()
+        files, duration, tasks = self.phase_one_selection()
         if not files:
             return
 
@@ -299,7 +310,17 @@ class FocusApp:
             Layout(name="lower", size=3)
         )
         
-        # Initial View
+        # Configure center layout based on tasks
+        if tasks:
+            layout["center"].split_column(
+                Layout(name="timer"),
+                Layout(name="tasks", size=len(tasks) + 4)
+            )
+            timer_layout = layout["center"]["timer"]
+            tasks_layout = layout["center"]["tasks"]
+        else:
+            timer_layout = layout["center"]
+        
         # Initial View
         old_settings = termios.tcgetattr(sys.stdin)
         try:
@@ -328,9 +349,20 @@ class FocusApp:
                     layout["upper"].update(Align.center(Text("Focus Noise Player", style="bold cyan")))
                     
                     # We render progress into a panel for the center
-                    layout["center"].update(
+                    timer_layout.update(
                         Panel(progress, title="Time Remaining", border_style="green")
                     )
+                    
+                    if tasks:
+                        task_table = Table.grid(padding=(0, 1))
+                        task_table.add_column(style="bold yellow", justify="right")
+                        task_table.add_column(style="white")
+                        for i, t in enumerate(tasks):
+                            task_table.add_row(f"{i+1}.", t)
+                        
+                        tasks_layout.update(
+                            Panel(Align.center(task_table), title="Current Tasks", border_style="magenta")
+                        )
                     
                     layout["lower"].update(
                         Panel(Align.center(Text(get_footer(), style="dim")))
