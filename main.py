@@ -178,6 +178,7 @@ class FocusApp:
         vol_steps = [1, 5, 10]
         weather_freqs = ["low", "medium", "high"]
         fade_durations = [1.0, 2.0, 3.0, 5.0]
+        theme_colors = ["cyan", "green", "magenta", "blue", "yellow", "red"]
 
         while True:
             self.console.clear()
@@ -541,5 +542,12 @@ class FocusApp:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 if __name__ == "__main__":
-    app = FocusApp()
-    app.run()
+    try:
+        app = FocusApp()
+        app.run()
+    except KeyboardInterrupt:
+        print("\n\nGoodbye! 👋")
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
