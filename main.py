@@ -104,7 +104,13 @@ class SettingsManager:
             "timer_duration": 25,
             "show_timer": True,
             "play_gong": True,
-            "dynamic_weather": True
+            "dynamic_weather": True,
+            "theme_color": "cyan",
+            "volume_step": 5,
+            "auto_start": False,
+            "weather_freq": "medium",
+            "fade_duration": 2.0,
+            "confirm_exit": False
         }
         if not os.path.exists(self.filename):
             return default
@@ -133,9 +139,14 @@ class FocusApp:
         self.stats = StatsManager()
         self.settings = SettingsManager()
         
+    @property
+    def theme_color(self):
+        return self.settings.get("theme_color", "cyan")
+
     def show_menu(self):
         self.console.clear()
-        self.console.print("[bold cyan]Focus Noise Player[/bold cyan] 🎧", justify="center")
+        tc = self.theme_color
+        self.console.print(f"[bold {tc}]Focus Noise Player[/bold {tc}] 🎧", justify="center")
         self.console.print()
         
         # Stats Panel
@@ -164,12 +175,17 @@ class FocusApp:
         self.console.print()
 
     def settings_menu(self):
+        vol_steps = [1, 5, 10]
+        weather_freqs = ["low", "medium", "high"]
+        fade_durations = [1.0, 2.0, 3.0, 5.0]
+
         while True:
             self.console.clear()
-            self.console.print("[bold cyan]Settings[/bold cyan] ⚙️", justify="center")
+            tc = self.theme_color
+            self.console.print(f"[bold {tc}]Settings[/bold {tc}] ⚙️", justify="center")
             self.console.print()
             
-            table = Table(box=box.ROUNDED, show_header=True, header_style="bold magenta")
+            table = Table(box=box.ROUNDED, show_header=True, header_style=f"bold {tc}")
             table.add_column("Option", style="yellow")
             table.add_column("Value", style="green")
             table.add_column("Description", style="dim italic")
@@ -182,7 +198,13 @@ class FocusApp:
             table.add_row("3. Show Timer", fmt_bool(self.settings.get('show_timer')), "Toggle countdown visibility")
             table.add_row("4. Play Gong", fmt_bool(self.settings.get('play_gong')), "Sound at session end")
             table.add_row("5. Dynamic Weather", fmt_bool(self.settings.get('dynamic_weather')), "Random background SFX")
-            table.add_row("6. Reset Stats", "[red]Action[/red]", "Clear all progress data")
+            table.add_row("6. Theme Color", f"[{self.settings.get('theme_color')}]{self.settings.get('theme_color').title()}[/]", "UI accent color")
+            table.add_row("7. Volume Step", f"{self.settings.get('volume_step')}%", "Adjustment increment")
+            table.add_row("8. Auto-Start", fmt_bool(self.settings.get('auto_start')), "Skip setup if sounds selected")
+            table.add_row("9. Weather Freq", f"{self.settings.get('weather_freq').title()}", "How often textures play")
+            table.add_row("10. Fade Duration", f"{self.settings.get('fade_duration')}s", "Stop fade-out time")
+            table.add_row("11. Confirm Exit", fmt_bool(self.settings.get('confirm_exit')), "Prompt before quitting")
+            table.add_row("12. Reset Stats", "[red]Action[/red]", "Clear all progress data")
             
             self.console.print(table, justify="center")
             self.console.print()
@@ -207,15 +229,48 @@ class FocusApp:
                 except ValueError:
                     pass
             elif choice == '3':
-                current = self.settings.get('show_timer')
-                self.settings.set('show_timer', not current)
+                self.settings.set('show_timer', not self.settings.get('show_timer'))
             elif choice == '4':
-                current = self.settings.get('play_gong', True)
-                self.settings.set('play_gong', not current)
+                self.settings.set('play_gong', not self.settings.get('play_gong'))
             elif choice == '5':
-                current = self.settings.get('dynamic_weather', True)
-                self.settings.set('dynamic_weather', not current)
+                self.settings.set('dynamic_weather', not self.settings.get('dynamic_weather'))
             elif choice == '6':
+                current = self.settings.get('theme_color')
+                try:
+                    idx = theme_colors.index(current)
+                    next_idx = (idx + 1) % len(theme_colors)
+                except ValueError:
+                    next_idx = 0
+                self.settings.set('theme_color', theme_colors[next_idx])
+            elif choice == '7':
+                current = self.settings.get('volume_step')
+                try:
+                    idx = vol_steps.index(current)
+                    next_idx = (idx + 1) % len(vol_steps)
+                except ValueError:
+                    next_idx = 1 # Default to 5
+                self.settings.set('volume_step', vol_steps[next_idx])
+            elif choice == '8':
+                self.settings.set('auto_start', not self.settings.get('auto_start'))
+            elif choice == '9':
+                current = self.settings.get('weather_freq', 'medium')
+                try:
+                    idx = weather_freqs.index(current)
+                    next_idx = (idx + 1) % len(weather_freqs)
+                except ValueError:
+                    next_idx = 1
+                self.settings.set('weather_freq', weather_freqs[next_idx])
+            elif choice == '10':
+                current = self.settings.get('fade_duration', 2.0)
+                try:
+                    idx = fade_durations.index(current)
+                    next_idx = (idx + 1) % len(fade_durations)
+                except ValueError:
+                    next_idx = 1
+                self.settings.set('fade_duration', fade_durations[next_idx])
+            elif choice == '11':
+                self.settings.set('confirm_exit', not self.settings.get('confirm_exit'))
+            elif choice == '12':
                 confirm = input("Are you sure you want to reset all stats? (y/n): ").lower()
                 if confirm == 'y':
                     self.stats.reset_stats()
@@ -257,6 +312,16 @@ class FocusApp:
         
         # Duration
         default_duration = self.settings.get("timer_duration")
+        
+        # Auto-Start Logic: If auto_start is ON, use defaults immediately
+        if self.settings.get("auto_start"):
+            self.console.print(f"\n[italic {self.theme_color}]Auto-starting with default duration ({default_duration}m) and volume ({self.settings.get('volume')}%)[/italic {self.theme_color}]")
+            time.sleep(1)
+            seconds = int(default_duration * 60)
+            vol_percent = float(self.settings.get("volume"))
+            self.audio.set_master_volume(vol_percent / 100.0)
+            return selected_files, seconds, [] # Auto-start skips task entry for speed
+
         self.console.print(f"[bold yellow]Session Duration (minutes) [{default_duration}]:[/bold yellow] ", end="")
         try:
             dur_input = input().strip()
@@ -308,8 +373,12 @@ class FocusApp:
 
 
         # Start Audio
+        fade_ms = int(self.settings.get("fade_duration", 2.0) * 1000)
         for f in files:
-            self.audio.play_sound(f, fade_ms=2000)
+            self.audio.play_sound(f, fade_ms=fade_ms)
+        
+        # Apply Weather Frequency
+        self.audio.set_weather_frequency(self.settings.get("weather_freq", "medium"))
 
         self.console.clear()
         self.console.print("[dim]controls: +/- to adjust volume, ctrl+c to quit[/dim]")
@@ -384,16 +453,18 @@ class FocusApp:
                     # Input Handling
                     key = self.check_input()
                     if key:
+                        step = self.settings.get("volume_step", 5) / 100.0
                         if key in ('+', 'w', '='): # = is unshifted +
-                            self.audio.set_master_volume(self.audio.master_volume + 0.05)
+                            self.audio.set_master_volume(self.audio.master_volume + step)
                         elif key in ('-', 's'):
-                            self.audio.set_master_volume(self.audio.master_volume - 0.05)
+                            self.audio.set_master_volume(self.audio.master_volume - step)
 
                     # Update Progress
                     progress.update(task_id, completed=elapsed)
                     
                     # Update Layout details
-                    layout["upper"].update(Align.center(Text("Focus Noise Player", style="bold cyan")))
+                    # Update Layout details
+                    layout["upper"].update(Align.center(Text("Focus Noise Player", style=f"bold {self.theme_color}")))
                     
                     # We render progress into a panel for the center
                     timer_layout.update(
@@ -422,8 +493,9 @@ class FocusApp:
             self.stats.update_time(elapsed_total)
             
             self.console.print("[dim]Fading out...[/dim]")
-            self.audio.stop_all(fade_ms=2000)
-            time.sleep(2.0)
+            fade_ms = int(self.settings.get("fade_duration", 2.0) * 1000)
+            self.audio.stop_all(fade_ms=fade_ms)
+            time.sleep(self.settings.get("fade_duration", 2.0))
             
             # Play Gong
             if self.settings.get("play_gong", True):
@@ -439,17 +511,27 @@ class FocusApp:
             self.console.print(traceback.format_exc())
             self.audio.stop_all(fade_ms=1000)
         except KeyboardInterrupt:
+            # Confirm Exit Check
+            if self.settings.get("confirm_exit", False):
+                self.console.print("\n[bold red]Exit requested. Confirm? (y/n): [/bold red]", end="")
+                try:
+                    confirm = input().strip().lower()
+                    if confirm != 'y':
+                        self.console.print("[dim]Resuming not supported yet. Exiting...[/dim]")
+                except:
+                    pass
+
             # Save stats on interrupt too
             try:
                 elapsed_total = time.time() - start_time
                 self.stats.update_time(elapsed_total)
             except NameError:
-                # If start_time wasn't initialized
                 pass
             
             self.console.print("\n[dim]Fading out...[/dim]")
-            self.audio.stop_all(fade_ms=2000)
-            time.sleep(2.0)
+            fade_ms = int(self.settings.get("fade_duration", 2.0) * 1000)
+            self.audio.stop_all(fade_ms=fade_ms)
+            time.sleep(self.settings.get("fade_duration", 2.0))
             self.console.print("\n[bold red]Session Stopped.[/bold red] 👋")
             try:
                 self.console.print(f"[dim]Stats Saved: +{int(elapsed_total/60)}m focus time[/dim]")

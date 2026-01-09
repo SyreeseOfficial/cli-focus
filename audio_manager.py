@@ -37,7 +37,8 @@ class AudioManager:
         
         # Dynamic Weather State
         self.last_texture_time = time.time()
-        self.next_texture_interval = random.uniform(30, 90) # Start with random interval
+        self.weather_freq_range = (30, 90) # Default Medium
+        self.next_texture_interval = random.uniform(*self.weather_freq_range)
         
         self.emojis = {
             'rain': '🌧️',
@@ -164,8 +165,16 @@ class AudioManager:
         if now - self.last_texture_time > self.next_texture_interval:
             self.play_random_texture()
             self.last_texture_time = now
-            # Set next interval (e.g., between 20s and 90s)
-            self.next_texture_interval = random.uniform(20, 90)
+            # Set next interval based on current range
+            self.next_texture_interval = random.uniform(*self.weather_freq_range)
+
+    def set_weather_frequency(self, level):
+        ranges = {
+            "low": (60, 120),
+            "medium": (30, 90),
+            "high": (15, 45)
+        }
+        self.weather_freq_range = ranges.get(level.lower(), (30, 90))
 
     def play_random_texture(self):
         if not self.playing:
