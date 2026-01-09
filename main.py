@@ -6,6 +6,10 @@ import sys
 import termios
 import tty
 import select
+from pathlib import Path
+import platform
+import argparse
+
 # Suppress pygame welcome message
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
@@ -21,9 +25,36 @@ from rich.align import Align
 from rich.text import Text
 from audio_manager import AudioManager
 
+def get_config_dir():
+    """Returns the OS-specific configuration directory."""
+    system = platform.system()
+    home = Path.home()
+    
+    if system == "Windows":
+        path = home / "AppData" / "Local" / "focus-cli"
+    elif system == "Darwin": # MacOS
+        path = home / "Library" / "Application Support" / "focus-cli"
+    else: # Linux/Unix
+        path = home / ".config" / "focus-cli"
+        
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
 class StatsManager:
-    def __init__(self, filename="stats.json"):
-        self.filename = filename
+    def __init__(self):
+        self.config_dir = get_config_dir()
+        self.filename = self.config_dir / "stats.json"
+        
+        # Migration from old local file
+        local_file = Path("stats.json")
+        if local_file.exists() and not self.filename.exists():
+            try:
+                import shutil
+                shutil.move(str(local_file), str(self.filename))
+                print(f"Migrated stats to {self.filename}")
+            except Exception as e:
+                print(f"Failed to migrate stats: {e}")
+
         self.stats = self.load_stats()
 
     def load_stats(self):
@@ -32,7 +63,7 @@ class StatsManager:
             "last_session_date": None,
             "current_streak": 0
         }
-        if not os.path.exists(self.filename):
+        if not self.filename.exists():
             return default
         
         try:
@@ -116,8 +147,20 @@ class StatsManager:
         self.save_stats()
 
 class SettingsManager:
-    def __init__(self, filename="settings.json"):
-        self.filename = filename
+    def __init__(self):
+        self.config_dir = get_config_dir()
+        self.filename = self.config_dir / "settings.json"
+
+        # Migration
+        local_file = Path("settings.json")
+        if local_file.exists() and not self.filename.exists():
+            try:
+                import shutil
+                shutil.move(str(local_file), str(self.filename))
+                print(f"Migrated settings to {self.filename}")
+            except Exception as e:
+                print(f"Failed to migrate settings: {e}")
+
         self.settings = self.load_settings()
 
     def load_settings(self):
@@ -132,9 +175,12 @@ class SettingsManager:
             "auto_start": False,
             "weather_freq": "medium",
             "fade_duration": 2.0,
-            "confirm_exit": False
+            "confirm_exit": False,
+            "show_system_log": True,
+            "enable_ghosts": True,
+            "ghost_chance": "rare"
         }
-        if not os.path.exists(self.filename):
+        if not self.filename.exists():
             return default
         try:
             with open(self.filename, 'r') as f:
@@ -180,7 +226,8 @@ class FocusApp:
         "[SYSTEM] Are you real?"
     ]
 
-    def __init__(self):
+    def __init__(self, cli_args=None):
+        self.cli_args = cli_args
         self.console = Console()
         self.audio = AudioManager()
         self.stats = StatsManager()
@@ -226,6 +273,7 @@ class FocusApp:
         weather_freqs = ["low", "medium", "high"]
         fade_durations = [1.0, 2.0, 3.0, 5.0]
         theme_colors = ["cyan", "green", "magenta", "blue", "yellow", "red"]
+        ghost_chances = ["rare", "spooky", "haunted"]
 
         while True:
             self.console.clear()
@@ -252,7 +300,10 @@ class FocusApp:
             table.add_row("9. Weather Freq", f"{self.settings.get('weather_freq').title()}", "How often textures play")
             table.add_row("10. Fade Duration", f"{self.settings.get('fade_duration')}s", "Stop fade-out time")
             table.add_row("11. Confirm Exit", fmt_bool(self.settings.get('confirm_exit')), "Prompt before quitting")
-            table.add_row("12. Reset Stats", "[red]Action[/red]", "Clear all progress data")
+            table.add_row("12. Show System Log", fmt_bool(self.settings.get('show_system_log')), "Toggle hacker log panel")
+            table.add_row("13. Enable Ghosts", fmt_bool(self.settings.get('enable_ghosts')), "Allow spooky messages")
+            table.add_row("14. Ghost Freq", f"{self.settings.get('ghost_chance').title()}", "How often ghosts appear")
+            table.add_row("15. Reset Stats", "[red]Action[/red]", "Clear all progress data")
             
             self.console.print(table, justify="center")
             self.console.print()
@@ -319,6 +370,18 @@ class FocusApp:
             elif choice == '11':
                 self.settings.set('confirm_exit', not self.settings.get('confirm_exit'))
             elif choice == '12':
+                self.settings.set('show_system_log', not self.settings.get('show_system_log'))
+            elif choice == '13':
+                self.settings.set('enable_ghosts', not self.settings.get('enable_ghosts'))
+            elif choice == '14':
+                current = self.settings.get('ghost_chance', 'rare')
+                try:
+                    idx = ghost_chances.index(current)
+                    next_idx = (idx + 1) % len(ghost_chances)
+                except ValueError:
+                    next_idx = 0
+                self.settings.set('ghost_chance', ghost_chances[next_idx])
+            elif choice == '15':
                 confirm = input("Are you sure you want to reset all stats? (y/n): ").lower()
                 if confirm == 'y':
                     self.stats.reset_stats()
@@ -326,6 +389,39 @@ class FocusApp:
                     time.sleep(1)
 
     def phase_one_selection(self):
+        # Check CLI args for headless start
+        if self.cli_args and self.cli_args.quick:
+            # Resolve sounds
+            selected_files = []
+            if self.cli_args.sound:
+                # Fuzzy match
+                query = self.cli_args.sound.lower()
+                best_match = None
+                for f in self.audio.sounds.keys():
+                    if query in f.lower():
+                        best_match = f
+                        break
+                if best_match:
+                     selected_files.append(best_match)
+                else:
+                    self.console.print(f"[yellow]Sound '{query}' not found. Playing silence.[/yellow]")
+
+            # Resolve duration
+            if self.cli_args.time:
+                seconds = int(self.cli_args.time * 60)
+            else:
+                seconds = int(self.settings.get("timer_duration") * 60)
+            
+            # Resolve Volume
+            if self.cli_args.volume is not None:
+                vol_percent = self.cli_args.volume
+            else:
+                 vol_percent = self.settings.get("volume")
+            self.audio.set_master_volume(vol_percent / 100.0)
+
+            return selected_files, seconds, []
+
+
         while True:
             self.show_menu()
             
@@ -363,7 +459,7 @@ class FocusApp:
         
         # Auto-Start Logic: If auto_start is ON, use defaults immediately
         if self.settings.get("auto_start"):
-            self.console.print(f"\n[italic {self.theme_color}]Auto-starting with default duration ({default_duration}m) and volume ({self.settings.get('volume')}%)[/italic {self.theme_color}]")
+            self.console.print(f"\\n[italic {self.theme_color}]Auto-starting with default duration ({default_duration}m) and volume ({self.settings.get('volume')}%)[/italic {self.theme_color}]")
             time.sleep(1)
             seconds = int(default_duration * 60)
             vol_percent = float(self.settings.get("volume"))
@@ -494,8 +590,14 @@ class FocusApp:
         return None
 
     def run(self):
+        # Scan assets before menu
+        self.audio.scan_assets()
+        
         files, duration, tasks = self.phase_one_selection()
-        if not files:
+        # If files is None, we exit (user selected invalid or no sound in menu and we want to bail)
+        # But if files is empty [] and we are in quick mode, maybe we want silence?
+        # The logic in phase_one_selection returns None, None, [] if exit.
+        if files is None:
             return
 
 
@@ -558,13 +660,17 @@ class FocusApp:
         if tasks:
             center_elements.append(Layout(name="tasks", size=len(tasks) + 4))
             
-        # Add System Log panel
-        center_elements.append(Layout(name="log", size=6)) # Fixed size for log
+        # Add System Log panel if enabled
+        if self.settings.get("show_system_log", True):
+            center_elements.append(Layout(name="log", size=6))
         
         layout["center"].split_column(*center_elements)
         
         timer_layout = layout["center"]["timer"]
-        log_layout = layout["center"]["log"]
+        
+        # Safe retrieval of optional layouts
+        log_layout = layout["center"].get("log") if self.settings.get("show_system_log", True) else None
+        
         if tasks:
             tasks_layout = layout["center"]["tasks"]
         else:
@@ -582,8 +688,16 @@ class FocusApp:
                 last_log_time = time.time()
                 log_interval = random.uniform(2.0, 5.0)
                 
-                # Choose message type (1% ghost chance)
-                if random.random() < 0.01:
+                ghost_enabled = self.settings.get("enable_ghosts", True)
+                
+                # Determine Chance
+                chance_mode = self.settings.get("ghost_chance", "rare")
+                threshold = 0.01
+                if chance_mode == "spooky": threshold = 0.05
+                elif chance_mode == "haunted": threshold = 0.20
+                
+                # Logic
+                if ghost_enabled and random.random() < threshold:
                     msg = random.choice(self.GHOST_MESSAGES)
                     # Style ghosts differently
                     msg = f"[bold red blink]{msg}[/bold red blink]"
@@ -648,10 +762,11 @@ class FocusApp:
                         )
                         
                     # Update System Log Panel
-                    log_text = "\n".join(log_messages)
-                    log_layout.update(
-                        Panel(Text.from_markup(log_text), title="System Log", border_style="blue", padding=(0,1))
-                    )
+                    if log_layout:
+                        log_text = "\n".join(log_messages)
+                        log_layout.update(
+                            Panel(Text.from_markup(log_text), title="System Log", border_style="blue", padding=(0,1))
+                        )
                     
                     layout["lower"].update(
                         Panel(Align.center(Text(get_footer(), style="dim")))
@@ -715,8 +830,16 @@ class FocusApp:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Focus Noise Player")
+    parser.add_argument("--time", type=float, help="Set duration in minutes")
+    parser.add_argument("--sound", type=str, help="Auto-select a sound (fuzzy match)")
+    parser.add_argument("--volume", type=int, help="Set volume (0-100)")
+    parser.add_argument("--quick", action="store_true", help="Skip menu and start immediately")
+    
+    args = parser.parse_args()
+
     try:
-        app = FocusApp()
+        app = FocusApp(cli_args=args)
         app.run()
     except KeyboardInterrupt:
         print("\n\nGoodbye! 👋")
