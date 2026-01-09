@@ -240,7 +240,7 @@ class FocusApp:
     def show_menu(self):
         self.console.clear()
         tc = self.theme_color
-        self.console.print(f"[bold {tc}]Focus Noise Player[/bold {tc}] 🎧", justify="center")
+        self.console.print(f"[bold {tc}]FocusNoiseCLI[/bold {tc}] 🎧", justify="center")
         self.console.print()
         
         # Stats Panel
@@ -768,7 +768,7 @@ class FocusApp:
                     progress.update(task_id, completed=elapsed)
                     
                     # Update Layout details
-                    layout["upper"].update(Align.center(Text("Focus Noise Player", style=f"bold {self.theme_color}")))
+                    layout["upper"].update(Align.center(Text("FocusNoiseCLI", style=f"bold {self.theme_color}")))
                     
                     # We render progress into a panel for the center
                     timer_layout.update(
@@ -855,7 +855,7 @@ class FocusApp:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Focus Noise Player")
+    parser = argparse.ArgumentParser(description="FocusNoiseCLI")
     parser.add_argument("--time", type=float, help="Set duration in minutes")
     parser.add_argument("--sound", type=str, help="Auto-select a sound (fuzzy match)")
     parser.add_argument("--volume", type=int, help="Set volume (0-100)")
