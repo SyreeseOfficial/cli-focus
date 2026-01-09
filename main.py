@@ -245,7 +245,7 @@ class FocusApp:
         
         # Stats Panel
         time_str, streak_str, rank = self.stats.get_display_stats()
-        stats_text = f"[bold green]Total Focus:[/bold green] {time_str}  |  [bold yellow]Current Streak:[/bold yellow] {streak_str} 🔥\n[bold {tc}]Rank:[/bold {tc}] {rank}"
+        stats_text = f"[bold green]Total Focus:[/bold green] {time_str}  |  [bold yellow]Current Streak:[/bold yellow] {streak_str} 🔥"
         self.console.print(Panel(Align.center(stats_text), box=box.ROUNDED, style="blue"), justify="center")
         self.console.print()
 
@@ -265,7 +265,7 @@ class FocusApp:
             table.add_row(idx, headers)
 
         self.console.print(table, justify="center")
-        self.console.print(Panel("[bold yellow]S[/bold yellow] - Settings", box=box.SIMPLE), justify="center")
+        self.console.print(Panel(f"[bold {tc}]Rank:[/bold {tc}] {rank}", box=box.SIMPLE), justify="center")
         self.console.print()
 
     def settings_menu(self):
